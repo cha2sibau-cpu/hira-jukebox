@@ -361,6 +361,177 @@
       padding: 16px 0;
     }
 
+    /* Chat */
+    #chat-section {
+      width: 100%;
+      max-width: 780px;
+      margin-top: 22px;
+    }
+
+    #chat-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    #chat-you {
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    #chat-you strong { color: var(--green); }
+
+    #chat-change-nick {
+      font-size: 0.7rem;
+      color: var(--muted);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      text-decoration: underline;
+    }
+
+    #chat-change-nick:hover { color: var(--text); }
+
+    #chat-messages {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      height: 220px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 8px;
+      scroll-behavior: smooth;
+    }
+
+    .chat-msg {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      font-size: 0.875rem;
+      line-height: 1.4;
+    }
+
+    .chat-nick {
+      font-weight: 700;
+      color: var(--green);
+      flex-shrink: 0;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-nick.is-me { color: #7eb8f7; }
+
+    .chat-text { flex: 1; word-break: break-word; }
+
+    .chat-time {
+      font-size: 0.68rem;
+      color: var(--muted);
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    #chat-input-wrap {
+      display: flex;
+      gap: 8px;
+    }
+
+    #chat-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #chat-input:focus { border-color: var(--green); }
+    #chat-input:disabled { opacity: 0.4; }
+
+    #chat-send-btn {
+      background: var(--green);
+      color: #000;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 700;
+      padding: 10px 18px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    #chat-send-btn:hover { background: var(--green-dim); }
+    #chat-send-btn:disabled { opacity: 0.5; cursor: default; }
+
+    /* Nickname modal */
+    #nickname-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    #nickname-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      width: min(340px, 90vw);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    #nickname-box h2 {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    #nickname-box p {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    #nickname-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 1rem;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #nickname-input:focus { border-color: var(--green); }
+
+    #nickname-confirm {
+      background: var(--green);
+      color: #000;
+      border: none;
+      font-size: 0.95rem;
+      font-weight: 700;
+      padding: 11px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    #nickname-confirm:hover { background: var(--green-dim); }
+
     /* Toasts */
     #toast-area {
       position: fixed;
@@ -439,6 +610,30 @@
     <div id="queue-empty" style="color:var(--muted);font-size:.88rem;padding:16px 0">Queue is empty — search for something!</div>
   </div>
 </section>
+
+<!-- Chat -->
+<section id="chat-section">
+  <div id="chat-header">
+    <div class="section-title">Chat</div>
+    <span id="chat-you"></span>
+    <button id="chat-change-nick">change</button>
+  </div>
+  <div id="chat-messages"></div>
+  <div id="chat-input-wrap">
+    <input id="chat-input" type="text" placeholder="Message…" maxlength="300" autocomplete="off" disabled />
+    <button id="chat-send-btn" disabled>Send</button>
+  </div>
+</section>
+
+<!-- Nickname modal -->
+<div id="nickname-modal" style="display:none">
+  <div id="nickname-box">
+    <h2>Who are you?</h2>
+    <p>Pick a name to join the chat. It's saved in your browser.</p>
+    <input id="nickname-input" type="text" placeholder="Your name…" maxlength="30" autocomplete="off" />
+    <button id="nickname-confirm">Join chat</button>
+  </div>
+</div>
 
 <div id="toast-area"></div>
 
@@ -711,6 +906,80 @@
   function esc(str) {
     return (str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+
+  // ── Chat ────────────────────────────────────────────────────────────────────
+  let myNickname = localStorage.getItem('jukebox_nickname') || null;
+
+  function openNicknameModal() {
+    const modal = document.getElementById('nickname-modal');
+    const input = document.getElementById('nickname-input');
+    modal.style.display = 'flex';
+    input.value = myNickname ?? '';
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function applyNickname(name) {
+    myNickname = name;
+    localStorage.setItem('jukebox_nickname', name);
+    document.getElementById('nickname-modal').style.display = 'none';
+    document.getElementById('chat-you').innerHTML = `chatting as <strong>${esc(name)}</strong>`;
+    document.getElementById('chat-input').disabled = false;
+    document.getElementById('chat-send-btn').disabled = false;
+    document.getElementById('chat-input').focus();
+  }
+
+  document.getElementById('nickname-confirm').addEventListener('click', () => {
+    const val = document.getElementById('nickname-input').value.trim();
+    if (!val) return;
+    applyNickname(val);
+  });
+
+  document.getElementById('nickname-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('nickname-confirm').click();
+  });
+
+  document.getElementById('chat-change-nick').addEventListener('click', openNicknameModal);
+
+  if (myNickname) {
+    applyNickname(myNickname);
+  } else {
+    openNicknameModal();
+  }
+
+  function fmtTime(ts) {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+
+  function appendChatMessage({ nickname, text, ts }) {
+    const list = document.getElementById('chat-messages');
+    const el = document.createElement('div');
+    el.className = 'chat-msg';
+    const isMe = nickname === myNickname;
+    el.innerHTML = `
+      <span class="chat-nick${isMe ? ' is-me' : ''}">${esc(nickname)}</span>
+      <span class="chat-text">${esc(text)}</span>
+      <span class="chat-time">${fmtTime(ts)}</span>
+    `;
+    list.appendChild(el);
+    list.scrollTop = list.scrollHeight;
+  }
+
+  socket.on('chat:history', (msgs) => msgs.forEach(appendChatMessage));
+  socket.on('chat:message', appendChatMessage);
+
+  function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text || !myNickname) return;
+    socket.emit('chat:send', { nickname: myNickname, text });
+    input.value = '';
+  }
+
+  document.getElementById('chat-send-btn').addEventListener('click', sendChatMessage);
+  document.getElementById('chat-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendChatMessage();
+  });
 })();
 </script>
 </body>

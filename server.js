@@ -38,6 +38,7 @@ let queue = [];        // tracks we've added via this app
 let nowPlaying = null; // last known now-playing snapshot
 let oauthState = null; // CSRF guard for the OAuth round-trip
 let hardStopArmed = false; // true while the last queued track is playing; triggers pause on next track
+let chatMessages = [];    // { nickname, text, ts } — last 200 kept in memory
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const {
@@ -263,6 +264,19 @@ io.on('connection', (socket) => {
   socket.emit('auth:status', { authenticated: !!tokens.access && !!tokens.refresh });
   socket.emit('nowPlaying:update', nowPlaying);
   socket.emit('queue:update', queue);
+  socket.emit('chat:history', chatMessages.slice(-50));
+
+  socket.on('chat:send', ({ nickname, text }) => {
+    if (!nickname?.trim() || !text?.trim()) return;
+    const msg = {
+      nickname: nickname.trim().slice(0, 30),
+      text: text.trim().slice(0, 300),
+      ts: Date.now(),
+    };
+    chatMessages.push(msg);
+    if (chatMessages.length > 200) chatMessages = chatMessages.slice(-200);
+    io.emit('chat:message', msg);
+  });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
