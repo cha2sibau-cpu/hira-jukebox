@@ -37,6 +37,7 @@ const tokens = { access: null, refresh: null, expiresAt: 0 };
 let queue = [];        // tracks we've added via this app
 let nowPlaying = null; // last known now-playing snapshot
 let oauthState = null; // CSRF guard for the OAuth round-trip
+let hardStopArmed = false; // true while the last queued track is playing; triggers pause on next track
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const {
@@ -75,6 +76,13 @@ async function getToken() {
 }
 
 const authHeader = (token) => ({ Authorization: `Bearer ${token}` });
+
+async function pausePlayback(token) {
+  await axios.put('https://api.spotify.com/v1/me/player/pause', null, {
+    headers: authHeader(token),
+    validateStatus: (s) => s < 500,
+  });
+}
 
 // ── OAuth routes ──────────────────────────────────────────────────────────────
 app.get('/login', (req, res) => {
@@ -150,7 +158,7 @@ app.get('/api/search', async (req, res) => {
 
 // ── API: add to queue ─────────────────────────────────────────────────────────
 app.post('/api/queue', async (req, res) => {
-  const { uri, name, artist, album, image, duration_ms } = req.body;
+  const { uri, name, artist, album, image, duration_ms, clientId } = req.body;
   if (!uri) return res.status(400).json({ error: 'uri is required' });
 
   try {
@@ -161,8 +169,9 @@ app.post('/api/queue', async (req, res) => {
       { headers: authHeader(token) }
     );
 
-    const track = { uri, name, artist, album, image, duration_ms, addedAt: Date.now() };
+    const track = { uri, name, artist, album, image, duration_ms, clientId, addedAt: Date.now() };
     queue.push(track);
+    hardStopArmed = false; // new song coming — cancel any pending hard stop
     io.emit('queue:update', queue);
     res.json({ ok: true });
   } catch (err) {
@@ -176,6 +185,19 @@ app.post('/api/queue', async (req, res) => {
     }
     res.status(status).json({ error: spotifyMsg ?? err.message });
   }
+});
+
+// ── API: remove from queue ────────────────────────────────────────────────────
+app.delete('/api/queue', (req, res) => {
+  const { uri, clientId } = req.body;
+  if (!uri || !clientId) return res.status(400).json({ error: 'uri and clientId are required' });
+
+  const idx = queue.findIndex((t) => t.uri === uri && t.clientId === clientId);
+  if (idx === -1) return res.status(404).json({ error: 'Track not found or not yours' });
+
+  queue.splice(idx, 1);
+  io.emit('queue:update', queue);
+  res.json({ ok: true });
 });
 
 // ── Now-playing poll (every 5 s) ──────────────────────────────────────────────
@@ -211,12 +233,19 @@ async function pollNowPlaying() {
       polledAt: Date.now(),
     };
 
-    // Trim our queue when a queued track starts playing
+    // Trim our queue when a queued track starts playing; hard-stop if queue runs out
     if (nowPlaying?.uri !== np.uri) {
       const idx = queue.findIndex((t) => t.uri === np.uri);
       if (idx !== -1) {
         queue = queue.slice(idx + 1);
         io.emit('queue:update', queue);
+        hardStopArmed = queue.length === 0;
+      } else if (hardStopArmed) {
+        // Spotify moved to a non-queued track after our queue emptied — pause it
+        hardStopArmed = false;
+        try { await pausePlayback(token); } catch {}
+        io.emit('jukebox:stopped');
+        return;
       }
     }
 

@@ -340,6 +340,21 @@
       background: var(--surface2);
     }
 
+    .remove-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1;
+      padding: 4px 6px;
+      cursor: pointer;
+      border-radius: 4px;
+      flex-shrink: 0;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .remove-btn:hover { color: #e44; background: rgba(238,68,68,0.1); }
+
     #queue-empty {
       color: var(--muted);
       font-size: 0.88rem;
@@ -436,6 +451,12 @@
   const socket = io();
   let authenticated = false;
 
+  const myClientId = (() => {
+    let id = localStorage.getItem('jukebox_client_id');
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem('jukebox_client_id', id); }
+    return id;
+  })();
+
   socket.on('auth:status', ({ authenticated: a }) => {
     authenticated = a;
     document.getElementById('login-banner').style.display = a ? 'none' : 'block';
@@ -447,6 +468,7 @@
 
   socket.on('nowPlaying:update', renderNowPlaying);
   socket.on('queue:update', renderQueue);
+  socket.on('jukebox:stopped', () => toast('Queue ended — Spotify paused. Add a song to keep going.', 'error'));
 
   // ── Progress animation ──────────────────────────────────────────────────────
   let progressTick = null;
@@ -539,7 +561,11 @@
           <div class="track-sub">${esc(t.artist)} — ${esc(t.album)}</div>
         </div>
         <span class="track-dur">${fmtMs(t.duration_ms)}</span>
+        ${t.clientId === myClientId ? `<button class="remove-btn" title="Remove">✕</button>` : ''}
       `;
+      if (t.clientId === myClientId) {
+        row.querySelector('.remove-btn').addEventListener('click', () => removeFromQueue(t.uri, t.clientId));
+      }
       list.appendChild(row);
     });
   }
@@ -620,7 +646,7 @@
       const res = await fetch('/api/queue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(track),
+        body: JSON.stringify({ ...track, clientId: myClientId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Failed to add');
@@ -640,6 +666,22 @@
       btn.classList.remove('adding');
       btn.disabled = false;
       toast(err.message, 'error');
+    }
+  }
+
+  async function removeFromQueue(uri, clientId) {
+    try {
+      const res = await fetch('/api/queue', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uri, clientId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast(data.error ?? 'Failed to remove', 'error');
+      }
+    } catch {
+      toast('Failed to remove', 'error');
     }
   }
 
