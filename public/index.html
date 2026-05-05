@@ -453,7 +453,13 @@
 
   const myClientId = (() => {
     let id = localStorage.getItem('jukebox_client_id');
-    if (!id) { id = crypto.randomUUID(); localStorage.setItem('jukebox_client_id', id); }
+    if (!id) {
+      // crypto.randomUUID() requires secure context; fallback for plain-HTTP LAN access
+      id = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+      localStorage.setItem('jukebox_client_id', id);
+    }
     return id;
   })();
 
