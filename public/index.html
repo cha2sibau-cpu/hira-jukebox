@@ -155,14 +155,37 @@
     }
 
     /* Search */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
     .section-title {
       font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: var(--muted);
       font-weight: 600;
-      margin-bottom: 10px;
     }
+
+    #results-toggle {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      display: none;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    #results-toggle:hover { border-color: #555; color: var(--text); }
+
+    #search-results.collapsed { display: none; }
 
     #search-section {
       width: 100%;
@@ -383,7 +406,10 @@
 
 <!-- Search -->
 <section id="search-section">
-  <div class="section-title">Search &amp; Add</div>
+  <div class="section-header">
+    <div class="section-title">Search &amp; Add</div>
+    <button id="results-toggle">Hide</button>
+  </div>
   <div id="search-wrap">
     <input id="search-input" type="text" placeholder="Search for a track…" autocomplete="off" />
     <button id="search-btn">Search</button>
@@ -547,15 +573,26 @@
     }
   }
 
+  const toggleBtn = document.getElementById('results-toggle');
+  toggleBtn.addEventListener('click', () => {
+    const container = document.getElementById('search-results');
+    const collapsed = container.classList.toggle('collapsed');
+    toggleBtn.textContent = collapsed ? 'Show' : 'Hide';
+  });
+
   function renderResults(tracks) {
     const container = document.getElementById('search-results');
     container.innerHTML = '';
+    container.classList.remove('collapsed');
+    toggleBtn.textContent = 'Hide';
 
     if (!tracks.length) {
       container.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:12px 0">No results</div>';
+      toggleBtn.style.display = 'block';
       return;
     }
 
+    toggleBtn.style.display = 'block';
     tracks.forEach((t) => {
       const row = document.createElement('div');
       row.className = 'track-row';
