@@ -594,7 +594,7 @@
 <section id="search-section">
   <div class="section-header">
     <div class="section-title">Search &amp; Add</div>
-    <button id="results-toggle">Hide</button>
+    <button id="results-toggle">Show</button>
   </div>
   <div id="search-wrap">
     <input id="search-input" type="text" placeholder="Search for a track…" autocomplete="off" />
@@ -802,24 +802,20 @@
 
   const toggleBtn = document.getElementById('results-toggle');
   toggleBtn.addEventListener('click', () => {
-    const container = document.getElementById('search-results');
-    const collapsed = container.classList.toggle('collapsed');
-    toggleBtn.textContent = collapsed ? 'Show' : 'Hide';
+    document.getElementById('search-results').classList.toggle('collapsed');
   });
 
   function renderResults(tracks) {
     const container = document.getElementById('search-results');
     container.innerHTML = '';
-    container.classList.remove('collapsed');
-    toggleBtn.textContent = 'Hide';
+    container.classList.add('collapsed'); // auto-collapse after each search
+    toggleBtn.style.display = 'block';
 
     if (!tracks.length) {
       container.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:12px 0">No results</div>';
-      toggleBtn.style.display = 'block';
       return;
     }
 
-    toggleBtn.style.display = 'block';
     tracks.forEach((t) => {
       const row = document.createElement('div');
       row.className = 'track-row';
