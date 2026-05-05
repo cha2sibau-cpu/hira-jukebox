@@ -802,13 +802,15 @@
 
   const toggleBtn = document.getElementById('results-toggle');
   toggleBtn.addEventListener('click', () => {
-    document.getElementById('search-results').classList.toggle('collapsed');
+    const collapsed = document.getElementById('search-results').classList.toggle('collapsed');
+    toggleBtn.textContent = collapsed ? 'Show' : 'Hide';
   });
 
   function renderResults(tracks) {
     const container = document.getElementById('search-results');
     container.innerHTML = '';
-    container.classList.add('collapsed'); // auto-collapse after each search
+    container.classList.remove('collapsed');
+    toggleBtn.textContent = 'Hide';
     toggleBtn.style.display = 'block';
 
     if (!tracks.length) {
