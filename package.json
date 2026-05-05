@@ -1,0 +1,16 @@
+{
+  "name": "hira-jukebox",
+  "version": "1.0.0",
+  "description": "Local Spotify jukebox — anyone can queue, host controls playback",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}

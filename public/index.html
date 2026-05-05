@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kesenian Barengan</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0d0d;
+      --surface: #1a1a1a;
+      --surface2: #242424;
+      --border: #2e2e2e;
+      --green: #1db954;
+      --green-dim: #17a349;
+      --text: #e8e8e8;
+      --muted: #888;
+      --radius: 10px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 60px;
+    }
+
+    header {
+      width: 100%;
+      max-width: 780px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--green);
+    }
+
+    #login-banner {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--green);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      width: 100%;
+      max-width: 780px;
+      margin-bottom: 22px;
+      font-size: 0.9rem;
+      display: none;
+    }
+
+    #login-banner a {
+      color: var(--green);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    /* Now Playing */
+    #now-playing {
+      width: 100%;
+      max-width: 780px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 22px;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+    }
+
+    #np-art {
+      width: 80px;
+      height: 80px;
+      border-radius: 6px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: var(--surface2);
+    }
+
+    #np-art.placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      color: var(--muted);
+    }
+
+    .np-info { flex: 1; min-width: 0; }
+
+    .np-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--green);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    #np-name {
+      font-size: 1.1rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #np-artist {
+      font-size: 0.85rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    .progress-wrap {
+      margin-top: 10px;
+      background: var(--border);
+      border-radius: 999px;
+      height: 3px;
+      overflow: hidden;
+    }
+
+    #np-progress {
+      height: 100%;
+      background: var(--green);
+      border-radius: 999px;
+      width: 0%;
+      transition: width 1s linear;
+    }
+
+    .np-times {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .paused-badge {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-left: 8px;
+    }
+
+    /* Search */
+    .section-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    #search-section {
+      width: 100%;
+      max-width: 780px;
+      margin-bottom: 22px;
+    }
+
+    #search-wrap {
+      display: flex;
+      gap: 8px;
+    }
+
+    #search-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 1rem;
+      padding: 12px 16px;
+      border-radius: var(--radius);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #search-input:focus { border-color: var(--green); }
+
+    #search-btn {
+      background: var(--green);
+      color: #000;
+      border: none;
+      font-size: 0.9rem;
+      font-weight: 700;
+      padding: 12px 20px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    #search-btn:hover { background: var(--green-dim); }
+    #search-btn:disabled { opacity: 0.5; cursor: default; }
+
+    #search-results {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .track-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    .track-row:hover { border-color: #444; background: var(--surface2); }
+
+    .track-row img {
+      width: 46px;
+      height: 46px;
+      border-radius: 4px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: var(--surface2);
+    }
+
+    .track-meta { flex: 1; min-width: 0; }
+
+    .track-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-sub {
+      font-size: 0.78rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 2px;
+    }
+
+    .track-dur {
+      font-size: 0.75rem;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .add-btn {
+      background: transparent;
+      border: 1px solid var(--green);
+      color: var(--green);
+      font-size: 0.8rem;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .add-btn:hover { background: var(--green); color: #000; }
+    .add-btn:disabled { opacity: 0.4; cursor: default; }
+    .add-btn.adding { opacity: 0.6; }
+    .add-btn.added { background: var(--green); color: #000; border-color: var(--green); }
+
+    /* Queue */
+    #queue-section {
+      width: 100%;
+      max-width: 780px;
+    }
+
+    #queue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .queue-row {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+    }
+
+    .queue-num {
+      font-size: 0.78rem;
+      color: var(--muted);
+      width: 20px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .queue-row img {
+      width: 40px;
+      height: 40px;
+      border-radius: 4px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: var(--surface2);
+    }
+
+    #queue-empty {
+      color: var(--muted);
+      font-size: 0.88rem;
+      padding: 16px 0;
+    }
+
+    /* Toasts */
+    #toast-area {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 999;
+    }
+
+    .toast {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      font-size: 0.85rem;
+      max-width: 320px;
+      animation: slide-in 0.2s ease;
+    }
+
+    .toast.error { border-left: 3px solid #e44; }
+    .toast.success { border-left: 3px solid var(--green); }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Kesenian Barengan</h1>
+  <span id="header-status" style="font-size:0.8rem;color:var(--muted)">connecting…</span>
+</header>
+
+<div id="login-banner">
+  <strong>Host setup:</strong> <a href="/login">Connect Spotify</a> to enable search and playback.
+</div>
+
+<!-- Now Playing -->
+<section id="now-playing">
+  <div id="np-art" class="placeholder">♪</div>
+  <div class="np-info">
+    <div class="np-label">Now Playing</div>
+    <div id="np-name" style="color:var(--muted)">Nothing playing</div>
+    <div id="np-artist"></div>
+    <div class="progress-wrap" id="progress-wrap" style="display:none">
+      <div id="np-progress"></div>
+    </div>
+    <div class="np-times" id="np-times" style="display:none">
+      <span id="np-elapsed">0:00</span>
+      <span id="np-duration">0:00</span>
+    </div>
+  </div>
+</section>
+
+<!-- Search -->
+<section id="search-section">
+  <div class="section-title">Search &amp; Add</div>
+  <div id="search-wrap">
+    <input id="search-input" type="text" placeholder="Search for a track…" autocomplete="off" />
+    <button id="search-btn">Search</button>
+  </div>
+  <div id="search-results"></div>
+</section>
+
+<!-- Queue -->
+<section id="queue-section">
+  <div class="section-title">Up Next</div>
+  <div id="queue-list">
+    <div id="queue-empty" style="color:var(--muted);font-size:.88rem;padding:16px 0">Queue is empty — search for something!</div>
+  </div>
+</section>
+
+<div id="toast-area"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── Socket ──────────────────────────────────────────────────────────────────
+  const socket = io();
+  let authenticated = false;
+
+  socket.on('auth:status', ({ authenticated: a }) => {
+    authenticated = a;
+    document.getElementById('login-banner').style.display = a ? 'none' : 'block';
+    document.getElementById('header-status').textContent = a ? 'Spotify connected' : 'No Spotify auth';
+    document.getElementById('header-status').style.color = a ? 'var(--green)' : 'var(--muted)';
+    document.getElementById('search-btn').disabled = !a;
+    document.getElementById('search-input').disabled = !a;
+  });
+
+  socket.on('nowPlaying:update', renderNowPlaying);
+  socket.on('queue:update', renderQueue);
+
+  // ── Progress animation ──────────────────────────────────────────────────────
+  let progressTick = null;
+  let npSnapshot = null; // { progress_ms, polledAt, duration_ms, is_playing }
+
+  function startProgressTick() {
+    if (progressTick) clearInterval(progressTick);
+    progressTick = setInterval(() => {
+      if (!npSnapshot?.is_playing) return;
+      const elapsed = npSnapshot.progress_ms + (Date.now() - npSnapshot.polledAt);
+      const pct = Math.min(100, (elapsed / npSnapshot.duration_ms) * 100);
+      document.getElementById('np-progress').style.width = pct + '%';
+      document.getElementById('np-elapsed').textContent = fmtMs(elapsed);
+    }, 1000);
+  }
+
+  function renderNowPlaying(np) {
+    const artEl    = document.getElementById('np-art');
+    const nameEl   = document.getElementById('np-name');
+    const artistEl = document.getElementById('np-artist');
+    const progWrap = document.getElementById('progress-wrap');
+    const timesEl  = document.getElementById('np-times');
+    const progBar  = document.getElementById('np-progress');
+    const durEl    = document.getElementById('np-duration');
+    const elapEl   = document.getElementById('np-elapsed');
+
+    if (!np) {
+      artEl.className = 'placeholder';
+      artEl.textContent = '♪';
+      nameEl.textContent = 'Nothing playing';
+      nameEl.style.color = 'var(--muted)';
+      artistEl.textContent = '';
+      progWrap.style.display = 'none';
+      timesEl.style.display  = 'none';
+      npSnapshot = null;
+      return;
+    }
+
+    // Art
+    if (np.image) {
+      artEl.className = '';
+      if (artEl.tagName !== 'IMG') {
+        const img = document.createElement('img');
+        img.id = 'np-art';
+        img.alt = '';
+        artEl.replaceWith(img);
+      }
+      document.getElementById('np-art').src = np.image;
+    }
+
+    nameEl.textContent   = np.name;
+    nameEl.style.color   = '';
+    artistEl.textContent = np.artist + (np.is_playing ? '' : ' ⏸');
+    durEl.textContent    = fmtMs(np.duration_ms);
+    elapEl.textContent   = fmtMs(np.progress_ms);
+
+    const pct = Math.min(100, (np.progress_ms / np.duration_ms) * 100);
+    progBar.style.transition = 'none';
+    progBar.style.width = pct + '%';
+    // re-enable smooth transition after a frame
+    requestAnimationFrame(() => { progBar.style.transition = 'width 1s linear'; });
+
+    progWrap.style.display = '';
+    timesEl.style.display  = '';
+
+    npSnapshot = { progress_ms: np.progress_ms, polledAt: np.polledAt ?? Date.now(), duration_ms: np.duration_ms, is_playing: np.is_playing };
+    startProgressTick();
+  }
+
+  // ── Queue rendering ─────────────────────────────────────────────────────────
+  function renderQueue(q) {
+    const list  = document.getElementById('queue-list');
+    const empty = document.getElementById('queue-empty');
+    list.querySelectorAll('.queue-row').forEach((el) => el.remove());
+
+    if (!q || q.length === 0) {
+      empty.style.display = '';
+      return;
+    }
+
+    empty.style.display = 'none';
+    q.forEach((t, i) => {
+      const row = document.createElement('div');
+      row.className = 'queue-row';
+      row.innerHTML = `
+        <span class="queue-num">${i + 1}</span>
+        <img src="${t.image ?? ''}" alt="" onerror="this.style.visibility='hidden'"/>
+        <div class="track-meta">
+          <div class="track-name">${esc(t.name)}</div>
+          <div class="track-sub">${esc(t.artist)} — ${esc(t.album)}</div>
+        </div>
+        <span class="track-dur">${fmtMs(t.duration_ms)}</span>
+      `;
+      list.appendChild(row);
+    });
+  }
+
+  // ── Search ──────────────────────────────────────────────────────────────────
+  let searchDebounce = null;
+
+  document.getElementById('search-btn').addEventListener('click', doSearch);
+  document.getElementById('search-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  async function doSearch() {
+    const q = document.getElementById('search-input').value.trim();
+    if (!q) return;
+
+    const btn = document.getElementById('search-btn');
+    btn.disabled = true;
+    btn.textContent = '…';
+
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Search failed');
+      renderResults(data);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = !authenticated;
+      btn.textContent = 'Search';
+    }
+  }
+
+  function renderResults(tracks) {
+    const container = document.getElementById('search-results');
+    container.innerHTML = '';
+
+    if (!tracks.length) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:12px 0">No results</div>';
+      return;
+    }
+
+    tracks.forEach((t) => {
+      const row = document.createElement('div');
+      row.className = 'track-row';
+      row.innerHTML = `
+        <img src="${t.image ?? ''}" alt="" onerror="this.style.visibility='hidden'"/>
+        <div class="track-meta">
+          <div class="track-name">${esc(t.name)}</div>
+          <div class="track-sub">${esc(t.artist)} — ${esc(t.album)}</div>
+        </div>
+        <span class="track-dur">${fmtMs(t.duration_ms)}</span>
+        <button class="add-btn" data-uri="${t.uri}">+ Add</button>
+      `;
+      row.querySelector('.add-btn').addEventListener('click', () => addToQueue(t, row));
+      container.appendChild(row);
+    });
+  }
+
+  async function addToQueue(track, row) {
+    const btn = row.querySelector('.add-btn');
+    btn.disabled = true;
+    btn.textContent = '…';
+    btn.classList.add('adding');
+
+    try {
+      const res = await fetch('/api/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(track),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to add');
+
+      btn.textContent = 'Added!';
+      btn.classList.remove('adding');
+      btn.classList.add('added');
+      toast(`"${track.name}" added to queue`, 'success');
+
+      setTimeout(() => {
+        btn.textContent = '+ Add';
+        btn.classList.remove('added');
+        btn.disabled = false;
+      }, 3000);
+    } catch (err) {
+      btn.textContent = '+ Add';
+      btn.classList.remove('adding');
+      btn.disabled = false;
+      toast(err.message, 'error');
+    }
+  }
+
+  // ── Toast ───────────────────────────────────────────────────────────────────
+  function toast(msg, type = 'success') {
+    const area = document.getElementById('toast-area');
+    const el   = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = msg;
+    area.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  function fmtMs(ms) {
+    if (!ms) return '0:00';
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
+  function esc(str) {
+    return (str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+})();
+</script>
+</body>
+</html>
