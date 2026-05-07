@@ -40,6 +40,7 @@ let oauthState = null; // CSRF guard for the OAuth round-trip
 let hardStopArmed = false; // true while the last queued track is playing; triggers pause on next track
 let chatMessages = [];    // { nickname, text, ts } — last 200 kept in memory
 let playHistory = [];     // { uri, name, artist, album, image, duration_ms, playedAt } — last 48h
+let currentLyrics = null; // { syncedLyrics: string|null, plainLyrics: string|null } | null
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const {
@@ -84,6 +85,36 @@ async function pausePlayback(token) {
     headers: authHeader(token),
     validateStatus: (s) => s < 500,
   });
+}
+
+async function fetchLyrics(track) {
+  const duration = Math.round(track.duration_ms / 1000);
+  const params = new URLSearchParams({
+    artist_name: track.artist,
+    track_name: track.name,
+    album_name: track.album,
+    duration,
+  });
+  try {
+    let res = await axios.get(`https://lrclib.net/api/get?${params}`, {
+      validateStatus: (s) => s < 500,
+      timeout: 8000,
+    });
+    if (res.status === 404) {
+      const q = encodeURIComponent(`${track.artist} ${track.name}`);
+      res = await axios.get(`https://lrclib.net/api/search?q=${q}`, {
+        validateStatus: (s) => s < 500,
+        timeout: 8000,
+      });
+      const first = Array.isArray(res.data) && res.data[0];
+      if (!first) return null;
+      return { syncedLyrics: first.syncedLyrics || null, plainLyrics: first.plainLyrics || null };
+    }
+    if (!res.data) return null;
+    return { syncedLyrics: res.data.syncedLyrics || null, plainLyrics: res.data.plainLyrics || null };
+  } catch {
+    return null;
+  }
 }
 
 // ── OAuth routes ──────────────────────────────────────────────────────────────
@@ -243,6 +274,13 @@ async function pollNowPlaying() {
       playHistory = playHistory.filter((h) => h.playedAt >= cutoff);
       io.emit('history:update', playHistory);
 
+      currentLyrics = null;
+      io.emit('lyrics:update', null);
+      fetchLyrics(np).then((lyrics) => {
+        currentLyrics = lyrics;
+        io.emit('lyrics:update', currentLyrics);
+      }).catch(() => {});
+
       const idx = queue.findIndex((t) => t.uri === np.uri);
       if (idx !== -1) {
         queue = queue.slice(idx + 1);
@@ -264,7 +302,7 @@ async function pollNowPlaying() {
   }
 }
 
-setInterval(pollNowPlaying, 5000);
+setInterval(pollNowPlaying, 1000);
 
 // ── Socket.io — hydrate new clients ──────────────────────────────────────────
 io.on('connection', (socket) => {
@@ -272,6 +310,7 @@ io.on('connection', (socket) => {
   socket.emit('nowPlaying:update', nowPlaying);
   socket.emit('queue:update', queue);
   socket.emit('history:update', playHistory);
+  socket.emit('lyrics:update', currentLyrics);
   socket.emit('chat:history', chatMessages.slice(-50));
 
   socket.on('chat:send', ({ nickname, text }) => {

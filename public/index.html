@@ -559,6 +559,51 @@
       text-align: center;
     }
 
+    /* Lyrics */
+    #lyrics-section {
+      width: 100%;
+      max-width: 780px;
+      margin-bottom: 22px;
+    }
+
+    #lyrics-lines {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      height: 240px;
+      overflow-y: auto;
+      padding: 16px 20px;
+      margin-top: 10px;
+    }
+
+    .lyric-line {
+      font-size: 0.95rem;
+      line-height: 1.85;
+      padding: 2px 0;
+      color: var(--muted);
+      transition: color 0.3s, font-weight 0.3s;
+      cursor: default;
+    }
+
+    .lyric-line.lyric-active {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .lyrics-plain {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.8;
+      white-space: pre-wrap;
+    }
+
+    .lyrics-empty {
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+      padding: 40px 0;
+    }
+
     /* Nickname modal */
     #nickname-modal {
       position: fixed;
@@ -676,6 +721,14 @@
   </div>
 </section>
 
+<!-- Lyrics -->
+<section id="lyrics-section">
+  <div class="section-title">Lyrics</div>
+  <div id="lyrics-lines">
+    <div class="lyrics-empty">No lyrics available</div>
+  </div>
+</section>
+
 <!-- Search -->
 <section id="search-section">
   <div class="section-header">
@@ -742,6 +795,10 @@
   // ── Socket ──────────────────────────────────────────────────────────────────
   const socket = io();
   let authenticated = false;
+  let lyricsData = null;
+  let activeLyricIdx = -1;
+  let lastRenderedNpUri = null;
+  let lastRenderedIsPlaying = null;
 
   const myClientId = (() => {
     let id = localStorage.getItem('jukebox_client_id');
@@ -767,6 +824,7 @@
   socket.on('nowPlaying:update', renderNowPlaying);
   socket.on('queue:update', renderQueue);
   socket.on('history:update', renderHistory);
+  socket.on('lyrics:update', renderLyrics);
   socket.on('jukebox:stopped', () => toast('Queue ended — Spotify paused. Add a song to keep going.', 'error'));
 
   // ── Progress animation ──────────────────────────────────────────────────────
@@ -781,6 +839,7 @@
       const pct = Math.min(100, (elapsed / npSnapshot.duration_ms) * 100);
       document.getElementById('np-progress').style.width = pct + '%';
       document.getElementById('np-elapsed').textContent = fmtMs(elapsed);
+      syncLyrics(elapsed);
     }, 1000);
   }
 
@@ -803,8 +862,27 @@
       progWrap.style.display = 'none';
       timesEl.style.display  = 'none';
       npSnapshot = null;
+      lastRenderedNpUri = null;
+      lastRenderedIsPlaying = null;
       return;
     }
+
+    if (np.uri === lastRenderedNpUri) {
+      // Same track — update snapshot for smooth progress/lyrics sync, skip DOM churn
+      if (np.is_playing !== lastRenderedIsPlaying) {
+        lastRenderedIsPlaying = np.is_playing;
+        artistEl.textContent = np.artist + (np.is_playing ? '' : ' ⏸');
+      }
+      npSnapshot = { uri: np.uri, progress_ms: np.progress_ms, polledAt: np.polledAt ?? Date.now(), duration_ms: np.duration_ms, is_playing: np.is_playing };
+      return;
+    }
+
+    // New track — full render
+    lastRenderedNpUri = np.uri;
+    lastRenderedIsPlaying = np.is_playing;
+    lyricsData = null;
+    activeLyricIdx = -1;
+    document.getElementById('lyrics-lines').innerHTML = '<div class="lyrics-empty">Loading lyrics…</div>';
 
     // Art
     if (np.image) {
@@ -827,13 +905,12 @@
     const pct = Math.min(100, (np.progress_ms / np.duration_ms) * 100);
     progBar.style.transition = 'none';
     progBar.style.width = pct + '%';
-    // re-enable smooth transition after a frame
     requestAnimationFrame(() => { progBar.style.transition = 'width 1s linear'; });
 
     progWrap.style.display = '';
     timesEl.style.display  = '';
 
-    npSnapshot = { progress_ms: np.progress_ms, polledAt: np.polledAt ?? Date.now(), duration_ms: np.duration_ms, is_playing: np.is_playing };
+    npSnapshot = { uri: np.uri, progress_ms: np.progress_ms, polledAt: np.polledAt ?? Date.now(), duration_ms: np.duration_ms, is_playing: np.is_playing };
     startProgressTick();
   }
 
@@ -1033,6 +1110,70 @@
       row.querySelector('.add-btn').addEventListener('click', () => addToQueue(t, row));
       list.appendChild(row);
     });
+  }
+
+  // ── Lyrics ──────────────────────────────────────────────────────────────────
+  function parseLrc(lrc) {
+    const lines = [];
+    for (const raw of lrc.split('\n')) {
+      const m = raw.match(/^\[(\d{1,2}):(\d{2}(?:\.\d+)?)\](.*)/);
+      if (!m) continue;
+      const time = parseInt(m[1], 10) * 60 + parseFloat(m[2]);
+      const text = m[3].trim();
+      if (text) lines.push({ time, text });
+    }
+    return lines.sort((a, b) => a.time - b.time);
+  }
+
+  function renderLyrics(data) {
+    const panel = document.getElementById('lyrics-lines');
+    lyricsData = null;
+    activeLyricIdx = -1;
+
+    if (!data) {
+      panel.innerHTML = '<div class="lyrics-empty">No lyrics available</div>';
+      return;
+    }
+
+    if (data.syncedLyrics) {
+      const parsed = parseLrc(data.syncedLyrics);
+      if (parsed.length > 0) {
+        lyricsData = { synced: parsed };
+        panel.innerHTML = parsed.map((line) =>
+          `<div class="lyric-line">${esc(line.text)}</div>`
+        ).join('');
+        return;
+      }
+    }
+
+    if (data.plainLyrics) {
+      lyricsData = { plain: data.plainLyrics };
+      panel.innerHTML = `<div class="lyrics-plain">${esc(data.plainLyrics).replace(/\n/g, '<br>')}</div>`;
+      return;
+    }
+
+    panel.innerHTML = '<div class="lyrics-empty">No lyrics available</div>';
+  }
+
+  function syncLyrics(elapsedMs) {
+    if (!lyricsData?.synced) return;
+    const secs = elapsedMs / 1000;
+    let idx = -1;
+    for (let i = 0; i < lyricsData.synced.length; i++) {
+      if (lyricsData.synced[i].time <= secs) idx = i;
+      else break;
+    }
+    if (idx === activeLyricIdx) return;
+    activeLyricIdx = idx;
+
+    const lines = document.querySelectorAll('#lyrics-lines .lyric-line');
+    lines.forEach((el, i) => {
+      el.classList.toggle('lyric-active', i === idx);
+    });
+
+    if (idx >= 0 && lines[idx]) {
+      lines[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
 
   // ── Chat ────────────────────────────────────────────────────────────────────
