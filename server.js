@@ -39,6 +39,7 @@ let nowPlaying = null; // last known now-playing snapshot
 let oauthState = null; // CSRF guard for the OAuth round-trip
 let hardStopArmed = false; // true while the last queued track is playing; triggers pause on next track
 let chatMessages = [];    // { nickname, text, ts } — last 200 kept in memory
+let playHistory = [];     // { uri, name, artist, album, image, duration_ms, playedAt } — last 48h
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const {
@@ -236,6 +237,12 @@ async function pollNowPlaying() {
 
     // Trim our queue when a queued track starts playing; hard-stop if queue runs out
     if (nowPlaying?.uri !== np.uri) {
+      // Record every song that starts playing (not just queued ones)
+      playHistory.unshift({ uri: np.uri, name: np.name, artist: np.artist, album: np.album, image: np.image, duration_ms: np.duration_ms, playedAt: Date.now() });
+      const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+      playHistory = playHistory.filter((h) => h.playedAt >= cutoff);
+      io.emit('history:update', playHistory);
+
       const idx = queue.findIndex((t) => t.uri === np.uri);
       if (idx !== -1) {
         queue = queue.slice(idx + 1);
@@ -264,6 +271,7 @@ io.on('connection', (socket) => {
   socket.emit('auth:status', { authenticated: !!tokens.access && !!tokens.refresh });
   socket.emit('nowPlaying:update', nowPlaying);
   socket.emit('queue:update', queue);
+  socket.emit('history:update', playHistory);
   socket.emit('chat:history', chatMessages.slice(-50));
 
   socket.on('chat:send', ({ nickname, text }) => {

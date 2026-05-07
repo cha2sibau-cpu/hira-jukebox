@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kesenian Barengan</title>
+  <link rel="icon" type="image/gif" href="/logo-kb.gif" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -44,6 +45,14 @@
       font-weight: 700;
       letter-spacing: -0.5px;
       color: var(--green);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    header h1 img {
+      height: 36px;
+      width: auto;
     }
 
     #login-banner {
@@ -361,12 +370,22 @@
       padding: 16px 0;
     }
 
-    /* Chat */
-    #chat-section {
+    /* Bottom panels: chat (left) + history (right) */
+    #bottom-panels {
       width: 100%;
       max-width: 780px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
       margin-top: 22px;
     }
+
+    @media (max-width: 580px) {
+      #bottom-panels { grid-template-columns: 1fr; }
+    }
+
+    /* Chat */
+    #chat-section { }
 
     #chat-header {
       display: flex;
@@ -473,6 +492,73 @@
     #chat-send-btn:hover { background: var(--green-dim); }
     #chat-send-btn:disabled { opacity: 0.5; cursor: default; }
 
+    /* History */
+    #history-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      height: 272px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      padding: 6px;
+      gap: 2px;
+      margin-top: 10px;
+    }
+
+    .history-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 8px;
+      border-radius: 6px;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .history-row:hover { background: var(--surface2); }
+
+    .history-row img {
+      width: 36px;
+      height: 36px;
+      border-radius: 4px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: var(--surface2);
+    }
+
+    .history-meta { flex: 1; min-width: 0; }
+
+    .history-name {
+      font-size: 0.82rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .history-sub {
+      font-size: 0.7rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-top: 1px;
+    }
+
+    .history-time {
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .history-empty {
+      color: var(--muted);
+      font-size: 0.82rem;
+      padding: 20px;
+      text-align: center;
+    }
+
     /* Nickname modal */
     #nickname-modal {
       position: fixed;
@@ -565,7 +651,7 @@
 <body>
 
 <header>
-  <h1>Kesenian Barengan</h1>
+  <h1><img src="/logo-kb.gif" alt="KB logo" />Kesenian Barengan</h1>
   <span id="header-status" style="font-size:0.8rem;color:var(--muted)">connecting…</span>
 </header>
 
@@ -611,19 +697,30 @@
   </div>
 </section>
 
-<!-- Chat -->
-<section id="chat-section">
-  <div id="chat-header">
-    <div class="section-title">Chat</div>
-    <span id="chat-you"></span>
-    <button id="chat-change-nick">change</button>
-  </div>
-  <div id="chat-messages"></div>
-  <div id="chat-input-wrap">
-    <input id="chat-input" type="text" placeholder="Message…" maxlength="300" autocomplete="off" disabled />
-    <button id="chat-send-btn" disabled>Send</button>
-  </div>
-</section>
+<!-- Bottom: Chat (left) | History (right) -->
+<div id="bottom-panels">
+
+  <section id="chat-section">
+    <div id="chat-header">
+      <div class="section-title">Chat</div>
+      <span id="chat-you"></span>
+      <button id="chat-change-nick">change</button>
+    </div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-wrap">
+      <input id="chat-input" type="text" placeholder="Message…" maxlength="300" autocomplete="off" disabled />
+      <button id="chat-send-btn" disabled>Send</button>
+    </div>
+  </section>
+
+  <section id="history-section">
+    <div class="section-title">Recently Played</div>
+    <div id="history-list">
+      <div class="history-empty">No songs played yet</div>
+    </div>
+  </section>
+
+</div>
 
 <!-- Nickname modal -->
 <div id="nickname-modal" style="display:none">
@@ -669,6 +766,7 @@
 
   socket.on('nowPlaying:update', renderNowPlaying);
   socket.on('queue:update', renderQueue);
+  socket.on('history:update', renderHistory);
   socket.on('jukebox:stopped', () => toast('Queue ended — Spotify paused. Add a song to keep going.', 'error'));
 
   // ── Progress animation ──────────────────────────────────────────────────────
@@ -903,6 +1001,38 @@
 
   function esc(str) {
     return (str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── History ─────────────────────────────────────────────────────────────────
+  function fmtAgo(ts) {
+    const m = Math.floor((Date.now() - ts) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    return `${Math.floor(m / 60)}h ago`;
+  }
+
+  function renderHistory(items) {
+    const list = document.getElementById('history-list');
+    list.innerHTML = '';
+    if (!items || items.length === 0) {
+      list.innerHTML = '<div class="history-empty">No songs played yet</div>';
+      return;
+    }
+    items.forEach((t) => {
+      const row = document.createElement('div');
+      row.className = 'history-row';
+      row.innerHTML = `
+        <img src="${t.image ?? ''}" alt="" onerror="this.style.visibility='hidden'"/>
+        <div class="history-meta">
+          <div class="history-name">${esc(t.name)}</div>
+          <div class="history-sub">${esc(t.artist)}</div>
+          <div class="history-time">${fmtAgo(t.playedAt)}</div>
+        </div>
+        <button class="add-btn" style="font-size:0.72rem;padding:4px 10px;flex-shrink:0">+ Add</button>
+      `;
+      row.querySelector('.add-btn').addEventListener('click', () => addToQueue(t, row));
+      list.appendChild(row);
+    });
   }
 
   // ── Chat ────────────────────────────────────────────────────────────────────
