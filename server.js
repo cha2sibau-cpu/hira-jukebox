@@ -38,6 +38,7 @@ let queue = [];        // tracks we've added via this app
 let nowPlaying = null; // last known now-playing snapshot
 let oauthState = null; // CSRF guard for the OAuth round-trip
 let hardStopArmed = false; // true while the last queued track is playing; triggers pause on next track
+let removedUris = {};     // uri → count of pending removals (auto-skip when track starts playing)
 let chatMessages = [];    // { nickname, text, ts } — last 200 kept in memory
 let playHistory = [];     // { uri, name, artist, album, image, duration_ms, playedAt } — last 48h
 let currentLyrics = null; // { syncedLyrics: string|null, plainLyrics: string|null } | null
@@ -95,24 +96,32 @@ async function fetchLyrics(track) {
     album_name: track.album,
     duration,
   });
+  console.log(`[lyrics] fetching: "${track.name}" by ${track.artist} (${duration}s)`);
   try {
     let res = await axios.get(`https://lrclib.net/api/get?${params}`, {
       validateStatus: (s) => s < 500,
       timeout: 8000,
     });
+    console.log(`[lyrics] /api/get status: ${res.status}`);
     if (res.status === 404) {
       const q = encodeURIComponent(`${track.artist} ${track.name}`);
       res = await axios.get(`https://lrclib.net/api/search?q=${q}`, {
         validateStatus: (s) => s < 500,
         timeout: 8000,
       });
+      console.log(`[lyrics] /api/search status: ${res.status}, results: ${Array.isArray(res.data) ? res.data.length : 'n/a'}`);
       const first = Array.isArray(res.data) && res.data[0];
-      if (!first) return null;
-      return { syncedLyrics: first.syncedLyrics || null, plainLyrics: first.plainLyrics || null };
+      if (!first) { console.log('[lyrics] no results found'); return null; }
+      const result = { syncedLyrics: first.syncedLyrics || null, plainLyrics: first.plainLyrics || null };
+      console.log(`[lyrics] found via search — synced: ${!!result.syncedLyrics}, plain: ${!!result.plainLyrics}`);
+      return result;
     }
-    if (!res.data) return null;
-    return { syncedLyrics: res.data.syncedLyrics || null, plainLyrics: res.data.plainLyrics || null };
-  } catch {
+    if (!res.data) { console.log('[lyrics] empty response body'); return null; }
+    const result = { syncedLyrics: res.data.syncedLyrics || null, plainLyrics: res.data.plainLyrics || null };
+    console.log(`[lyrics] found — synced: ${!!result.syncedLyrics}, plain: ${!!result.plainLyrics}`);
+    return result;
+  } catch (err) {
+    console.log(`[lyrics] fetch error: ${err.message}`);
     return null;
   }
 }
@@ -229,6 +238,8 @@ app.delete('/api/queue', (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Track not found or not yours' });
 
   queue.splice(idx, 1);
+  // Spotify has no remove-from-queue API — mark for auto-skip when it starts playing
+  removedUris[uri] = (removedUris[uri] || 0) + 1;
   io.emit('queue:update', queue);
   res.json({ ok: true });
 });
@@ -268,6 +279,19 @@ async function pollNowPlaying() {
 
     // Trim our queue when a queued track starts playing; hard-stop if queue runs out
     if (nowPlaying?.uri !== np.uri) {
+      // Auto-skip tracks the user removed — Spotify has no remove API so we skip on play
+      if (removedUris[np.uri] > 0) {
+        removedUris[np.uri]--;
+        if (removedUris[np.uri] === 0) delete removedUris[np.uri];
+        try {
+          await axios.post('https://api.spotify.com/v1/me/player/next', null, {
+            headers: authHeader(token),
+            validateStatus: (s) => s < 500,
+          });
+        } catch {}
+        return; // let the next poll handle the track that actually plays
+      }
+
       // Record every song that starts playing (not just queued ones)
       playHistory.unshift({ uri: np.uri, name: np.name, artist: np.artist, album: np.album, image: np.image, duration_ms: np.duration_ms, playedAt: Date.now() });
       const cutoff = Date.now() - 48 * 60 * 60 * 1000;
