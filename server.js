@@ -88,6 +88,26 @@ async function pausePlayback(token) {
   });
 }
 
+async function tryAutoplayFromHistory(excludeUri, token) {
+  const candidates = playHistory.filter((h) => h.uri !== excludeUri);
+  if (candidates.length === 0) { hardStopArmed = true; return; }
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  try {
+    await axios.post(
+      `https://api.spotify.com/v1/me/player/queue?uri=${encodeURIComponent(pick.uri)}`,
+      null,
+      { headers: authHeader(token) }
+    );
+    const track = { uri: pick.uri, name: pick.name, artist: pick.artist, album: pick.album, image: pick.image, duration_ms: pick.duration_ms, clientId: 'jukebox-auto', addedAt: Date.now() };
+    queue.push(track);
+    hardStopArmed = false;
+    io.emit('queue:update', queue);
+    io.emit('jukebox:autoplay', { name: pick.name, artist: pick.artist });
+  } catch {
+    hardStopArmed = true;
+  }
+}
+
 async function fetchLyrics(track) {
   const duration = Math.round(track.duration_ms / 1000);
   const params = new URLSearchParams({
@@ -309,7 +329,11 @@ async function pollNowPlaying() {
       if (idx !== -1) {
         queue = queue.slice(idx + 1);
         io.emit('queue:update', queue);
-        hardStopArmed = queue.length === 0;
+        if (queue.length === 0) {
+          await tryAutoplayFromHistory(np.uri, token);
+        } else {
+          hardStopArmed = false;
+        }
       } else if (hardStopArmed) {
         // Spotify moved to a non-queued track after our queue emptied — pause it
         hardStopArmed = false;

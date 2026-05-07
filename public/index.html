@@ -179,7 +179,7 @@
       font-weight: 600;
     }
 
-    #results-toggle {
+    #results-toggle, #lyrics-toggle {
       background: transparent;
       border: 1px solid var(--border);
       color: var(--muted);
@@ -188,11 +188,12 @@
       padding: 3px 10px;
       border-radius: 999px;
       cursor: pointer;
-      display: none;
       transition: border-color 0.15s, color 0.15s;
     }
 
-    #results-toggle:hover { border-color: #555; color: var(--text); }
+    #results-toggle { display: none; }
+
+    #results-toggle:hover, #lyrics-toggle:hover { border-color: #555; color: var(--text); }
 
     #search-results.collapsed { display: none; }
 
@@ -604,6 +605,93 @@
       padding: 40px 0;
     }
 
+    /* Lyrics fullscreen overlay */
+    #lyrics-fs-overlay {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      z-index: 900;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 40px 60px;
+    }
+
+    #lyrics-fs-close {
+      position: absolute;
+      top: 20px;
+      right: 24px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 5px 14px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+
+    #lyrics-fs-close:hover { border-color: #555; color: var(--text); }
+
+    #lyrics-fs-track {
+      position: absolute;
+      top: 24px;
+      left: 28px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #lyrics-fs-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    #lyrics-fs-artist {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    #lyrics-fs-lines {
+      width: 100%;
+      max-width: 860px;
+      max-height: 100%;
+      overflow-y: auto;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      scrollbar-width: none;
+    }
+
+    #lyrics-fs-lines::-webkit-scrollbar { display: none; }
+
+    .lyric-line-fs {
+      font-size: 1.3rem;
+      line-height: 1.7;
+      padding: 4px 0;
+      color: rgba(255,255,255,0.18);
+      transition: color 0.35s, font-size 0.35s, font-weight 0.35s;
+      cursor: default;
+    }
+
+    .lyric-line-fs.lyric-active {
+      color: #fff;
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .lyrics-fs-plain {
+      font-size: 1.1rem;
+      color: rgba(255,255,255,0.55);
+      line-height: 1.9;
+      white-space: pre-wrap;
+      text-align: center;
+    }
+
     /* Nickname modal */
     #nickname-modal {
       position: fixed;
@@ -723,11 +811,27 @@
 
 <!-- Lyrics -->
 <section id="lyrics-section">
-  <div class="section-title">Lyrics</div>
+  <div class="section-header">
+    <div class="section-title">Lyrics</div>
+    <div style="display:flex;gap:6px">
+      <button id="lyrics-expand" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-size:0.72rem;font-weight:600;padding:3px 10px;border-radius:999px;cursor:pointer;transition:border-color .15s,color .15s" title="Fullscreen">⤢</button>
+      <button id="lyrics-toggle">Hide</button>
+    </div>
+  </div>
   <div id="lyrics-lines">
     <div class="lyrics-empty">No lyrics available</div>
   </div>
 </section>
+
+<!-- Lyrics fullscreen -->
+<div id="lyrics-fs-overlay" style="display:none">
+  <div id="lyrics-fs-track">
+    <span id="lyrics-fs-name"></span>
+    <span id="lyrics-fs-artist"></span>
+  </div>
+  <button id="lyrics-fs-close">✕ Close</button>
+  <div id="lyrics-fs-lines"></div>
+</div>
 
 <!-- Search -->
 <section id="search-section">
@@ -826,6 +930,16 @@
   socket.on('history:update', renderHistory);
   socket.on('lyrics:update', renderLyrics);
   socket.on('jukebox:stopped', () => toast('Queue ended — Spotify paused. Add a song to keep going.', 'error'));
+  socket.on('jukebox:autoplay', ({ name, artist }) => toast(`Auto-playing from history: "${name}" by ${artist}`, 'success'));
+
+  // ── Lyrics toggle ───────────────────────────────────────────────────────────
+  const lyricsToggleBtn = document.getElementById('lyrics-toggle');
+  lyricsToggleBtn.addEventListener('click', () => {
+    const panel = document.getElementById('lyrics-lines');
+    const hidden = panel.style.display === 'none';
+    panel.style.display = hidden ? '' : 'none';
+    lyricsToggleBtn.textContent = hidden ? 'Hide' : 'Show';
+  });
 
   // ── Progress animation ──────────────────────────────────────────────────────
   let progressTick = null;
@@ -883,6 +997,11 @@
     lyricsData = null;
     activeLyricIdx = -1;
     document.getElementById('lyrics-lines').innerHTML = '<div class="lyrics-empty">Loading lyrics…</div>';
+    if (lyricsFs) {
+      document.getElementById('lyrics-fs-name').textContent = np.name;
+      document.getElementById('lyrics-fs-artist').textContent = np.artist;
+      document.getElementById('lyrics-fs-lines').innerHTML = '<div class="lyrics-empty" style="font-size:1.2rem;color:var(--muted)">Loading lyrics…</div>';
+    }
 
     // Art
     if (np.image) {
@@ -1113,6 +1232,8 @@
   }
 
   // ── Lyrics ──────────────────────────────────────────────────────────────────
+  let lyricsFs = false;
+
   function parseLrc(lrc) {
     const lines = [];
     for (const raw of lrc.split('\n')) {
@@ -1132,6 +1253,7 @@
 
     if (!data) {
       panel.innerHTML = '<div class="lyrics-empty">No lyrics available</div>';
+      if (lyricsFs) renderLyricsFs();
       return;
     }
 
@@ -1142,6 +1264,7 @@
         panel.innerHTML = parsed.map((line) =>
           `<div class="lyric-line">${esc(line.text)}</div>`
         ).join('');
+        if (lyricsFs) renderLyricsFs();
         return;
       }
     }
@@ -1149,10 +1272,12 @@
     if (data.plainLyrics) {
       lyricsData = { plain: data.plainLyrics };
       panel.innerHTML = `<div class="lyrics-plain">${esc(data.plainLyrics).replace(/\n/g, '<br>')}</div>`;
+      if (lyricsFs) renderLyricsFs();
       return;
     }
 
     panel.innerHTML = '<div class="lyrics-empty">No lyrics available</div>';
+    if (lyricsFs) renderLyricsFs();
   }
 
   function syncLyrics(elapsedMs) {
@@ -1167,14 +1292,54 @@
     activeLyricIdx = idx;
 
     const lines = document.querySelectorAll('#lyrics-lines .lyric-line');
-    lines.forEach((el, i) => {
-      el.classList.toggle('lyric-active', i === idx);
-    });
+    lines.forEach((el, i) => el.classList.toggle('lyric-active', i === idx));
+    if (idx >= 0 && lines[idx]) lines[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    if (idx >= 0 && lines[idx]) {
-      lines[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (lyricsFs) {
+      const fsLines = document.querySelectorAll('#lyrics-fs-lines .lyric-line-fs');
+      fsLines.forEach((el, i) => el.classList.toggle('lyric-active', i === idx));
+      if (idx >= 0 && fsLines[idx]) fsLines[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }
+
+  function renderLyricsFs() {
+    const panel = document.getElementById('lyrics-fs-lines');
+    panel.innerHTML = '';
+    if (!lyricsData) {
+      panel.innerHTML = '<div class="lyrics-empty" style="font-size:1.2rem;color:var(--muted)">No lyrics available</div>';
+      return;
+    }
+    if (lyricsData.synced) {
+      lyricsData.synced.forEach((line, i) => {
+        const el = document.createElement('div');
+        el.className = 'lyric-line-fs' + (i === activeLyricIdx ? ' lyric-active' : '');
+        el.textContent = line.text;
+        panel.appendChild(el);
+      });
+      const active = panel.querySelectorAll('.lyric-line-fs')[activeLyricIdx];
+      if (active) active.scrollIntoView({ behavior: 'instant', block: 'center' });
+    } else if (lyricsData.plain) {
+      panel.innerHTML = `<div class="lyrics-fs-plain">${esc(lyricsData.plain).replace(/\n/g, '<br>')}</div>`;
+    }
+  }
+
+  function openLyricsFs() {
+    lyricsFs = true;
+    document.getElementById('lyrics-fs-overlay').style.display = 'flex';
+    const np = npSnapshot;
+    document.getElementById('lyrics-fs-name').textContent = document.getElementById('np-name').textContent;
+    document.getElementById('lyrics-fs-artist').textContent = document.getElementById('np-artist').textContent;
+    renderLyricsFs();
+  }
+
+  function closeLyricsFs() {
+    lyricsFs = false;
+    document.getElementById('lyrics-fs-overlay').style.display = 'none';
+  }
+
+  document.getElementById('lyrics-expand').addEventListener('click', openLyricsFs);
+  document.getElementById('lyrics-fs-close').addEventListener('click', closeLyricsFs);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && lyricsFs) closeLyricsFs(); });
 
   // ── Chat ────────────────────────────────────────────────────────────────────
   let myNickname = localStorage.getItem('jukebox_nickname') || null;
