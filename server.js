@@ -7,6 +7,7 @@ const querystring = require('querystring');
 const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 
 const app = express();
 const server = http.createServer(app);
@@ -14,6 +15,34 @@ const io = new Server(server);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ── Wall setup ────────────────────────────────────────────────────────────────
+const WALL_FILE = path.join(__dirname, 'wall.json');
+const WALL_UPLOAD_DIR = path.join(__dirname, 'uploads', 'wall');
+const ARCHIVES_DIR = path.join(__dirname, 'archives');
+const WALL_MAX = 30;
+
+[WALL_UPLOAD_DIR, ARCHIVES_DIR].forEach((dir) => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+const wallStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, WALL_UPLOAD_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    cb(null, crypto.randomUUID() + ext);
+  },
+});
+
+const wallUpload = multer({
+  storage: wallStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files are allowed'));
+  },
+});
 
 // ── Token persistence ─────────────────────────────────────────────────────────
 const TOKENS_FILE = path.join(__dirname, '.tokens.json');
@@ -32,6 +61,66 @@ function loadTokens() {
   }
 }
 
+// ── Wall persistence ──────────────────────────────────────────────────────────
+function saveWall() {
+  fs.writeFileSync(WALL_FILE, JSON.stringify({ photos: wallPhotos, lastReset: wallLastReset }), 'utf8');
+}
+
+function loadWall() {
+  try {
+    const data = JSON.parse(fs.readFileSync(WALL_FILE, 'utf8'));
+    wallPhotos = data.photos || [];
+    wallLastReset = data.lastReset || Date.now();
+    console.log(`✅  Loaded wall — ${wallPhotos.length} photo(s)`);
+  } catch {
+    // no wall.json yet
+  }
+}
+
+// ── Wall archive + reset ──────────────────────────────────────────────────────
+async function archiveAndResetWall() {
+  console.log('[wall] archiving…');
+
+  try {
+    const puppeteer = require('puppeteer-core');
+    const browser = await puppeteer.launch({
+      executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1400, height: 900 });
+    await page.goto(`http://localhost:${PORT}/wall-snapshot`, { waitUntil: 'networkidle0', timeout: 30000 });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const archivePath = path.join(ARCHIVES_DIR, `wall_archive_${timestamp}.png`);
+    await page.screenshot({ path: archivePath, fullPage: true });
+    await browser.close();
+    console.log(`[wall] screenshot saved → ${archivePath}`);
+  } catch (err) {
+    console.error('[wall] screenshot failed:', err.message);
+  }
+
+  try {
+    fs.readdirSync(WALL_UPLOAD_DIR).forEach((f) => {
+      try { fs.unlinkSync(path.join(WALL_UPLOAD_DIR, f)); } catch {}
+    });
+  } catch {}
+
+  wallPhotos = [];
+  wallLastReset = Date.now();
+  saveWall();
+  io.emit('wall:update', { photos: wallPhotos, lastReset: wallLastReset });
+  console.log('[wall] reset complete');
+}
+
+function checkWallTimer() {
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  if (!wallArchiving && wallPhotos.length > 0 && Date.now() - wallLastReset >= THREE_DAYS_MS) {
+    console.log('[wall] 3-day timer triggered — archiving');
+    wallArchiving = true;
+    archiveAndResetWall().catch(console.error).finally(() => { wallArchiving = false; });
+  }
+}
+
 // ── In-memory state ──────────────────────────────────────────────────────────
 const tokens = { access: null, refresh: null, expiresAt: 0 };
 let queue = [];        // tracks we've added via this app
@@ -42,6 +131,11 @@ let removedUris = {};     // uri → count of pending removals (auto-skip when t
 let chatMessages = [];    // { nickname, text, ts } — last 200 kept in memory
 let playHistory = [];     // { uri, name, artist, album, image, duration_ms, playedAt } — last 48h
 let currentLyrics = null; // { syncedLyrics: string|null, plainLyrics: string|null } | null
+let lyricsUri = null;    // URI of the track for which lyrics were last fetched
+
+let wallPhotos = [];     // [{ id, filename, caption, rotation, offsetX, offsetY, addedAt }]
+let wallLastReset = Date.now();
+let wallArchiving = false;
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const {
@@ -264,6 +358,56 @@ app.delete('/api/queue', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Wall snapshot page (for Puppeteer archive screenshot) ────────────────────
+app.get('/wall-snapshot', (req, res) => {
+  const photosHtml = wallPhotos.map((p) => {
+    const cap = (p.caption || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `<div class="pol" style="transform:rotate(${p.rotation}deg)"><img src="/uploads/wall/${encodeURIComponent(p.filename)}" alt=""><div class="cap">${cap}</div></div>`;
+  }).join('');
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#f5efe0;padding:32px;font-family:sans-serif}
+.wall{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.pol{background:#fff;padding:10px 10px 36px;box-shadow:2px 4px 14px rgba(0,0,0,.3);display:inline-block}
+.pol img{width:156px;height:156px;object-fit:cover;display:block}
+.cap{margin-top:8px;font-size:13px;color:#333;text-align:center;font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:156px}
+  </style></head><body><div class="wall">${photosHtml}</div></body></html>`);
+});
+
+// ── Wall upload ───────────────────────────────────────────────────────────────
+const wallUploadMiddleware = wallUpload.single('photo');
+
+app.post('/wall/upload', async (req, res) => {
+  let uploadErr = null;
+  await new Promise((resolve) => {
+    wallUploadMiddleware(req, res, (err) => { uploadErr = err || null; resolve(); });
+  });
+
+  if (uploadErr) return res.status(400).json({ error: uploadErr.message || 'Upload failed' });
+  if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
+
+  const caption = (req.body.caption ?? '').trim().slice(0, 30);
+  const photo = {
+    id: crypto.randomUUID(),
+    filename: req.file.filename,
+    caption,
+    rotation: parseFloat((Math.random() * 16 - 8).toFixed(2)),
+    offsetX: parseFloat((Math.random() * 30 - 15).toFixed(1)),
+    offsetY: parseFloat((Math.random() * 30 - 15).toFixed(1)),
+    addedAt: Date.now(),
+  };
+
+  wallPhotos.push(photo);
+  saveWall();
+  io.emit('wall:update', { photos: wallPhotos, lastReset: wallLastReset });
+  res.json({ ok: true, photo });
+
+  if (wallPhotos.length >= WALL_MAX && !wallArchiving) {
+    wallArchiving = true;
+    archiveAndResetWall().catch(console.error).finally(() => { wallArchiving = false; });
+  }
+});
+
 // ── Now-playing poll (every 5 s) ──────────────────────────────────────────────
 async function pollNowPlaying() {
   if (!tokens.access) return;
@@ -274,6 +418,13 @@ async function pollNowPlaying() {
       headers: authHeader(token),
       validateStatus: (s) => s < 500,
     });
+
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers['retry-after'] || '10', 10);
+      console.warn(`[poll] Spotify rate limit hit — backing off ${retryAfter}s`);
+      await new Promise((r) => setTimeout(r, retryAfter * 1000));
+      return;
+    }
 
     if (res.status === 204 || !res.data?.item) {
       if (nowPlaying !== null) {
@@ -319,6 +470,7 @@ async function pollNowPlaying() {
       io.emit('history:update', playHistory);
 
       currentLyrics = null;
+      lyricsUri = np.uri;
       io.emit('lyrics:update', null);
       fetchLyrics(np).then((lyrics) => {
         currentLyrics = lyrics;
@@ -341,6 +493,15 @@ async function pollNowPlaying() {
         io.emit('jukebox:stopped');
         return;
       }
+    } else if (np.uri === lyricsUri && currentLyrics === null) {
+      // Same track, but lyrics previously returned null — retry once in case of transient failure
+      lyricsUri = null;
+      fetchLyrics(np).then((lyrics) => {
+        if (lyrics && nowPlaying?.uri === np.uri) {
+          currentLyrics = lyrics;
+          io.emit('lyrics:update', currentLyrics);
+        }
+      }).catch(() => {});
     }
 
     nowPlaying = np;
@@ -350,7 +511,7 @@ async function pollNowPlaying() {
   }
 }
 
-setInterval(pollNowPlaying, 1000);
+setInterval(pollNowPlaying, 5000);
 
 // ── Socket.io — hydrate new clients ──────────────────────────────────────────
 io.on('connection', (socket) => {
@@ -360,6 +521,7 @@ io.on('connection', (socket) => {
   socket.emit('history:update', playHistory);
   socket.emit('lyrics:update', currentLyrics);
   socket.emit('chat:history', chatMessages.slice(-50));
+  socket.emit('wall:update', { photos: wallPhotos, lastReset: wallLastReset });
 
   socket.on('chat:send', ({ nickname, text }) => {
     if (!nickname?.trim() || !text?.trim()) return;
@@ -376,6 +538,9 @@ io.on('connection', (socket) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 loadTokens();
+loadWall();
+checkWallTimer();
+setInterval(checkWallTimer, 60 * 60 * 1000);
 server.listen(PORT, () => {
   console.log(`\n🎵  HIRA Jukebox running at http://localhost:${PORT}`);
   if (!tokens.refresh) {

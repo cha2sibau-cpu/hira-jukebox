@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kesenian Barengan</title>
   <link rel="icon" type="image/gif" href="/logo-kb.gif" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -779,6 +781,100 @@
       from { opacity: 0; transform: translateX(20px); }
       to   { opacity: 1; transform: translateX(0); }
     }
+
+    /* Photo Wall */
+    #wall-section {
+      width: 100%;
+      max-width: 780px;
+      margin-top: 22px;
+      margin-bottom: 22px;
+    }
+
+    #wall-upload-area {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 10px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    #wall-caption-input {
+      flex: 1;
+      min-width: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.9rem;
+      padding: 9px 14px;
+      border-radius: var(--radius);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    #wall-caption-input:focus { border-color: var(--green); }
+
+    #wall-upload-label {
+      background: var(--green);
+      color: #000;
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 9px 16px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    #wall-upload-label:hover { background: var(--green-dim); }
+    #wall-upload-label.uploading { opacity: 0.6; pointer-events: none; }
+
+    #wall-photos {
+      background: #f5efe0;
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      min-height: 80px;
+      align-items: flex-start;
+    }
+
+    .polaroid {
+      background: #fff;
+      padding: 10px 10px 36px;
+      box-shadow: 2px 4px 14px rgba(0,0,0,0.28);
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .polaroid img {
+      width: 140px;
+      height: 140px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .polaroid-caption {
+      margin-top: 8px;
+      font-family: 'Caveat', cursive;
+      font-size: 15px;
+      color: #333;
+      text-align: center;
+      width: 140px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #wall-empty {
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-align: center;
+      padding: 20px;
+      width: 100%;
+    }
   </style>
 </head>
 <body>
@@ -851,6 +947,22 @@
   <div class="section-title">Up Next</div>
   <div id="queue-list">
     <div id="queue-empty" style="color:var(--muted);font-size:.88rem;padding:16px 0">Queue is empty — search for something!</div>
+  </div>
+</section>
+
+<!-- Photo Wall -->
+<section id="wall-section">
+  <div class="section-header">
+    <div class="section-title">Photo Wall</div>
+    <span id="wall-count" style="font-size:0.75rem;color:var(--muted)">0 / 30</span>
+  </div>
+  <div id="wall-upload-area">
+    <input id="wall-caption-input" type="text" placeholder="Caption (optional, 30 chars max)" maxlength="30" autocomplete="off" />
+    <label id="wall-upload-label" for="wall-file-input">+ Upload Photo</label>
+    <input id="wall-file-input" type="file" accept="image/*" style="display:none" />
+  </div>
+  <div id="wall-photos">
+    <div id="wall-empty">No photos yet — be the first to add one!</div>
   </div>
 </section>
 
@@ -1401,6 +1513,7 @@
 
   socket.on('chat:history', (msgs) => msgs.forEach(appendChatMessage));
   socket.on('chat:message', appendChatMessage);
+  socket.on('wall:update', renderWall);
 
   function sendChatMessage() {
     const input = document.getElementById('chat-input');
@@ -1413,6 +1526,65 @@
   document.getElementById('chat-send-btn').addEventListener('click', sendChatMessage);
   document.getElementById('chat-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') sendChatMessage();
+  });
+
+  // ── Photo Wall ──────────────────────────────────────────────────────────────
+  function renderWall({ photos }) {
+    const container = document.getElementById('wall-photos');
+    document.getElementById('wall-count').textContent = `${photos.length} / 30`;
+    container.innerHTML = '';
+
+    if (!photos || photos.length === 0) {
+      container.innerHTML = '<div id="wall-empty">No photos yet — be the first to add one!</div>';
+      return;
+    }
+
+    photos.forEach((p) => {
+      const el = document.createElement('div');
+      el.className = 'polaroid';
+      el.style.transform = `rotate(${p.rotation}deg) translate(${p.offsetX}px, ${p.offsetY}px)`;
+
+      const img = document.createElement('img');
+      img.src = `/uploads/wall/${encodeURIComponent(p.filename)}`;
+      img.alt = p.caption || '';
+
+      const cap = document.createElement('div');
+      cap.className = 'polaroid-caption';
+      cap.textContent = p.caption || '';
+
+      el.appendChild(img);
+      el.appendChild(cap);
+      container.appendChild(el);
+    });
+  }
+
+  document.getElementById('wall-file-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const label = document.getElementById('wall-upload-label');
+    label.classList.add('uploading');
+    label.textContent = 'Uploading…';
+
+    const caption = document.getElementById('wall-caption-input').value.trim().slice(0, 30);
+    const fd = new FormData();
+    fd.append('photo', file);
+    fd.append('caption', caption);
+
+    try {
+      const res = await fetch('/wall/upload', { method: 'POST', body: fd });
+      const ct = res.headers.get('content-type') || '';
+      const data = ct.includes('application/json') ? await res.json() : { error: await res.text() };
+      if (!res.ok) throw new Error(data.error ?? 'Upload failed');
+      document.getElementById('wall-caption-input').value = '';
+      toast('Photo added to the wall!', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      label.classList.remove('uploading');
+      label.textContent = '+ Upload Photo';
+      e.target.value = '';
+    }
   });
 })();
 </script>
