@@ -1043,6 +1043,8 @@
   socket.on('lyrics:update', renderLyrics);
   socket.on('jukebox:stopped', () => toast('Queue ended — Spotify paused. Add a song to keep going.', 'error'));
   socket.on('jukebox:autoplay', ({ name, artist }) => toast(`Auto-playing from history: "${name}" by ${artist}`, 'success'));
+  socket.on('poll:rateLimited', ({ retryAfter }) => toast(`Spotify rate limit hit — retrying in ${retryAfter}s`, 'error'));
+  socket.on('nowPlaying:update', () => { /* banner clears on next successful poll */ });
 
   // ── Lyrics toggle ───────────────────────────────────────────────────────────
   const lyricsToggleBtn = document.getElementById('lyrics-toggle');

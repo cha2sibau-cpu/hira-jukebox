@@ -424,8 +424,10 @@ async function pollNowPlaying() {
     });
 
     if (res.status === 429) {
-      const retryAfter = parseInt(res.headers['retry-after'] || '30', 10);
-      console.warn(`[poll] Spotify rate limit — backing off ${retryAfter}s`);
+      const suggested = parseInt(res.headers['retry-after'] || '30', 10);
+      const retryAfter = Math.min(suggested, 30); // cap at 30s so the app doesn't freeze
+      console.warn(`[poll] Spotify rate limit — backing off ${retryAfter}s (Spotify suggested ${suggested}s)`);
+      io.emit('poll:rateLimited', { retryAfter });
       return scheduleNextPoll(retryAfter * 1000);
     }
 
