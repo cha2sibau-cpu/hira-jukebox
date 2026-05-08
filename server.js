@@ -408,9 +408,13 @@ app.post('/wall/upload', async (req, res) => {
   }
 });
 
-// ── Now-playing poll (every 5 s) ──────────────────────────────────────────────
+// ── Now-playing poll (recursive setTimeout — respects back-off) ───────────────
+function scheduleNextPoll(ms = 5000) {
+  setTimeout(pollNowPlaying, ms);
+}
+
 async function pollNowPlaying() {
-  if (!tokens.access) return;
+  if (!tokens.access) return scheduleNextPoll();
 
   try {
     const token = await getToken();
@@ -420,10 +424,9 @@ async function pollNowPlaying() {
     });
 
     if (res.status === 429) {
-      const retryAfter = parseInt(res.headers['retry-after'] || '10', 10);
-      console.warn(`[poll] Spotify rate limit hit — backing off ${retryAfter}s`);
-      await new Promise((r) => setTimeout(r, retryAfter * 1000));
-      return;
+      const retryAfter = parseInt(res.headers['retry-after'] || '30', 10);
+      console.warn(`[poll] Spotify rate limit — backing off ${retryAfter}s`);
+      return scheduleNextPoll(retryAfter * 1000);
     }
 
     if (res.status === 204 || !res.data?.item) {
@@ -431,7 +434,7 @@ async function pollNowPlaying() {
         nowPlaying = null;
         io.emit('nowPlaying:update', null);
       }
-      return;
+      return scheduleNextPoll();
     }
 
     const item = res.data.item;
@@ -460,7 +463,7 @@ async function pollNowPlaying() {
             validateStatus: (s) => s < 500,
           });
         } catch {}
-        return; // let the next poll handle the track that actually plays
+        return scheduleNextPoll(1000); // let the next poll handle the track that actually plays
       }
 
       // Record every song that starts playing (not just queued ones)
@@ -491,7 +494,7 @@ async function pollNowPlaying() {
         hardStopArmed = false;
         try { await pausePlayback(token); } catch {}
         io.emit('jukebox:stopped');
-        return;
+        return scheduleNextPoll();
       }
     } else if (np.uri === lyricsUri && currentLyrics === null) {
       // Same track, but lyrics previously returned null — retry once in case of transient failure
@@ -509,9 +512,10 @@ async function pollNowPlaying() {
   } catch {
     // silently swallow — next poll will retry (token refresh handled in getToken)
   }
+  scheduleNextPoll();
 }
 
-setInterval(pollNowPlaying, 5000);
+scheduleNextPoll();
 
 // ── Socket.io — hydrate new clients ──────────────────────────────────────────
 io.on('connection', (socket) => {
