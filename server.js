@@ -136,6 +136,7 @@ let lyricsUri = null;    // URI of the track for which lyrics were last fetched
 let wallPhotos = [];     // [{ id, filename, caption, rotation, offsetX, offsetY, addedAt }]
 let wallLastReset = Date.now();
 let wallArchiving = false;
+let pollResumeAt = 0;   // epoch ms when polling will resume after a rate-limit back-off
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const {
@@ -424,10 +425,10 @@ async function pollNowPlaying() {
     });
 
     if (res.status === 429) {
-      const suggested = parseInt(res.headers['retry-after'] || '30', 10);
-      const retryAfter = Math.min(suggested, 30); // cap at 30s so the app doesn't freeze
-      console.warn(`[poll] Spotify rate limit — backing off ${retryAfter}s (Spotify suggested ${suggested}s)`);
-      io.emit('poll:rateLimited', { retryAfter });
+      const retryAfter = parseInt(res.headers['retry-after'] || '60', 10);
+      pollResumeAt = Date.now() + retryAfter * 1000;
+      console.warn(`[poll] Spotify rate limit — backing off ${retryAfter}s (until ${new Date(pollResumeAt).toLocaleTimeString()})`);
+      io.emit('poll:rateLimited', { resumeAt: pollResumeAt });
       return scheduleNextPoll(retryAfter * 1000);
     }
 
@@ -510,6 +511,7 @@ async function pollNowPlaying() {
     }
 
     nowPlaying = np;
+    pollResumeAt = 0; // clear any stale rate-limit state
     io.emit('nowPlaying:update', nowPlaying);
   } catch {
     // silently swallow — next poll will retry (token refresh handled in getToken)
@@ -528,6 +530,7 @@ io.on('connection', (socket) => {
   socket.emit('lyrics:update', currentLyrics);
   socket.emit('chat:history', chatMessages.slice(-50));
   socket.emit('wall:update', { photos: wallPhotos, lastReset: wallLastReset });
+  if (pollResumeAt > Date.now()) socket.emit('poll:rateLimited', { resumeAt: pollResumeAt });
 
   socket.on('chat:send', ({ nickname, text }) => {
     if (!nickname?.trim() || !text?.trim()) return;

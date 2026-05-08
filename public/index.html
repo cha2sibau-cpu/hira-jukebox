@@ -777,6 +777,19 @@
     .toast.error { border-left: 3px solid #e44; }
     .toast.success { border-left: 3px solid var(--green); }
 
+    /* Rate-limit banner */
+    #rate-limit-banner {
+      display: none;
+      background: #2a1a1a;
+      border: 1px solid #e44;
+      border-radius: var(--radius);
+      padding: 10px 16px;
+      font-size: 0.82rem;
+      color: #f88;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
     @keyframes slide-in {
       from { opacity: 0; transform: translateX(20px); }
       to   { opacity: 1; transform: translateX(0); }
@@ -887,6 +900,9 @@
 <div id="login-banner">
   <strong>Host setup:</strong> <a href="/login">Connect Spotify</a> to enable search and playback.
 </div>
+
+<!-- Rate-limit banner -->
+<div id="rate-limit-banner"></div>
 
 <!-- Now Playing -->
 <section id="now-playing">
@@ -1043,8 +1059,35 @@
   socket.on('lyrics:update', renderLyrics);
   socket.on('jukebox:stopped', () => toast('Queue ended — Spotify paused. Add a song to keep going.', 'error'));
   socket.on('jukebox:autoplay', ({ name, artist }) => toast(`Auto-playing from history: "${name}" by ${artist}`, 'success'));
-  socket.on('poll:rateLimited', ({ retryAfter }) => toast(`Spotify rate limit hit — retrying in ${retryAfter}s`, 'error'));
-  socket.on('nowPlaying:update', () => { /* banner clears on next successful poll */ });
+  let rateLimitTimer = null;
+  const rateLimitBanner = document.getElementById('rate-limit-banner');
+
+  function showRateLimitBanner(resumeAt) {
+    if (rateLimitTimer) clearInterval(rateLimitTimer);
+    rateLimitBanner.style.display = 'block';
+    function tick() {
+      const secsLeft = Math.max(0, Math.round((resumeAt - Date.now()) / 1000));
+      if (secsLeft <= 0) {
+        rateLimitBanner.style.display = 'none';
+        clearInterval(rateLimitTimer);
+        rateLimitTimer = null;
+        return;
+      }
+      const m = Math.floor(secsLeft / 60), s = secsLeft % 60;
+      rateLimitBanner.textContent = `Spotify rate limit — reconnecting in ${m}:${String(s).padStart(2,'0')}`;
+    }
+    tick();
+    rateLimitTimer = setInterval(tick, 1000);
+  }
+
+  socket.on('poll:rateLimited', ({ resumeAt }) => showRateLimitBanner(resumeAt));
+  socket.on('nowPlaying:update', (np) => {
+    if (np && rateLimitTimer) {
+      clearInterval(rateLimitTimer);
+      rateLimitTimer = null;
+      rateLimitBanner.style.display = 'none';
+    }
+  });
 
   // ── Lyrics toggle ───────────────────────────────────────────────────────────
   const lyricsToggleBtn = document.getElementById('lyrics-toggle');
